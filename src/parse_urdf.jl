@@ -43,9 +43,9 @@ function parse_joint{T}(::Type{T}, xmlJoint::XMLElement)
         axis = SVector{3}(parse_vector(T, find_element(xmlJoint, "axis"), "xyz", "1 0 0"))
         return Joint(name, Prismatic(axis))
     elseif jointType == "floating"
-        return Joint(name, QuaternionFloating())
+        return Joint(name, QuaternionFloating{T}())
     elseif jointType == "fixed"
-        return Joint(name, Fixed())
+        return Joint(name, Fixed{T}())
     else
         error("joint type $jointType not recognized")
     end

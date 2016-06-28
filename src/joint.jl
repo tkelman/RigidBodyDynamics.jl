@@ -1,4 +1,4 @@
-abstract JointType
+abstract JointType{T<:Real}
 
 immutable Joint
     name::String
@@ -38,10 +38,10 @@ end
 @joint_type_dependent_function rand_configuration(t::Type)
 @joint_type_dependent_function joint_twist(q::AbstractVector, v::AbstractVector)
 
-immutable QuaternionFloating <: JointType
+immutable QuaternionFloating{T<:Real}<:JointType{T}
 end
 show(io::IO, jt::QuaternionFloating) = print(io, "Quaternion floating joint")
-rand(::Type{QuaternionFloating}) = QuaternionFloating()
+rand{T}(::Type{QuaternionFloating{T}}) = QuaternionFloating{T}()
 
 function joint_transform{T<:Real}(j::Joint, jt::QuaternionFloating, q::AbstractVector{T})
     length(q) == 7 || error("q has wrong size")
@@ -101,9 +101,9 @@ function joint_twist{T<:Real}(j::Joint, jt::QuaternionFloating, q::AbstractVecto
     ret
 end
 
-abstract OneDegreeOfFreedomFixedAxis <: JointType
+abstract OneDegreeOfFreedomFixedAxis{T<:Real}<:JointType{T}
 
-immutable Prismatic{T<:Real} <: OneDegreeOfFreedomFixedAxis
+immutable Prismatic{T<:Real}<:OneDegreeOfFreedomFixedAxis{T}
     translation_axis::SVector{3, T}
 end
 # Prismatic{T}(rotation_axis::SVector{3, T}) = Prismatic{T}(rotation_axis)
@@ -125,7 +125,7 @@ function motion_subspace{T<:Real}(j::Joint, jt::Prismatic, q::AbstractVector{T})
     return GeometricJacobian(j.frameAfter, j.frameBefore, j.frameAfter, angular, linear)
 end
 
-immutable Revolute{T<:Real} <: OneDegreeOfFreedomFixedAxis
+immutable Revolute{T<:Real}<:OneDegreeOfFreedomFixedAxis{T}
     rotation_axis::SVector{3, T}
 end
 # Revolute{T}(rotation_axis::SVector{3, T}) = Revolute{T}(rotation_axis)
@@ -163,10 +163,10 @@ configuration_derivative_to_velocity(j::Joint, jt::OneDegreeOfFreedomFixedAxis, 
 velocity_to_configuration_derivative(j::Joint, jt::OneDegreeOfFreedomFixedAxis, q::AbstractVector, v::AbstractVector) = v
 
 
-immutable Fixed <: JointType
+immutable Fixed{T<:Real}<:JointType{T}
 end
 show(io::IO, jt::Fixed) = print(io, "Fixed joint")
-rand(::Type{Fixed}) = Fixed()
+rand{T}(::Type{Fixed{T}}) = Fixed{T}()
 joint_transform{T}(j::Joint, jt::Fixed, q::AbstractVector{T}) = Transform3D(T, j.frameAfter, j.frameBefore)
 function joint_twist{T<:Real}(j::Joint, jt::Fixed, q::AbstractVector{T}, v::AbstractVector{T})
     zero(Twist{T}, j.frameAfter, j.frameBefore, j.frameAfter)
