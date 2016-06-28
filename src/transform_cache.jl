@@ -41,7 +41,7 @@ end
 
 function add_frame!{C}(cache::TransformCache{C}, updateTransformToParent)
     # for non-fixed frames
-    to_parent = CacheElement(Transform3D{C}, () -> convert(Transform3D{C}, updateTransformToParent()))
+    to_parent = CacheElement(Transform3D{C}, updateTransformToParent)
     t = to_parent.data
     parent_to_root = cache.transformsToRoot[t.to]
     cache.transformsToParent[t.from] = to_parent
@@ -49,8 +49,17 @@ function add_frame!{C}(cache::TransformCache{C}, updateTransformToParent)
     setdirty!(cache)
 end
 
-function TransformCache{M, Q}(m::Mechanism{M}, q::Vector{Q})
-    C = promote_type(M, Q)
+immutable UpdateJointTransform{X, C}
+    joint::Joint
+    qJoint::VectorViewType{X}
+end
+
+@compat function (functor::UpdateJointTransform{X, C}){X, C}()
+    convert(Transform3D{C}, joint_transform(functor.joint, functor.qJoint))
+end
+
+function TransformCache{M, X}(m::Mechanism{M}, q::Vector{X})
+    typealias C promote_type(M, X)
     cache = TransformCache{C}()
 
     for vertex in m.toposortedTree
@@ -59,7 +68,7 @@ function TransformCache{M, Q}(m::Mechanism{M}, q::Vector{Q})
             joint = vertex.edgeToParentData
             add_frame!(cache, m.jointToJointTransforms[joint])
             qJoint = view(q, m.qRanges[joint])
-            add_frame!(cache, () -> joint_transform(joint, qJoint))
+            add_frame!(cache, UpdateJointTransform{X, C}(joint, qJoint))
         else
             cache.transformsToRoot[body.frame] = CacheElement(Transform3D{C}(body.frame, body.frame), UpdateTransformToRoot{C}())
         end

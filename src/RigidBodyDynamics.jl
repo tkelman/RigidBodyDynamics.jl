@@ -14,6 +14,9 @@ import Compat.String
 
 if !isdefined(Base, :view)
     const view = slice
+    typealias VectorViewType{T} SubArray{T,1,Array{T,1},Tuple{UnitRange{Int64}},1}
+else
+    typealias VectorViewType{T} SubArray{T,1,Array{T,1},Tuple{UnitRange{Int64}},true}
 end
 
 include("third_party_addendum.jl")

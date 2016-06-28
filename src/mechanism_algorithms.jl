@@ -279,7 +279,7 @@ function inverse_dynamics{X, M, V, W}(
         v̇::AbstractVector{V},
         externalWrenches::Associative{RigidBody{M}, Wrench{W}} = NullDict{RigidBody{M}, Wrench{X}}())
 
-    T = promote_type(X, M, V, W)
+    typealias T promote_type(X, M, V, W)
     torques = Vector{T}(num_velocities(state))
     jointWrenches = Dict{RigidBody{M}, Wrench{T}}()
     accelerations = Dict{RigidBody{M}, SpatialAcceleration{T}}()
