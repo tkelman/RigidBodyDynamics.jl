@@ -1,20 +1,20 @@
 type Mechanism{T<:Real}
-    toposortedTree::Vector{TreeVertex{RigidBody{T}, Joint}}
+    toposortedTree::Vector{TreeVertex{RigidBody{T}, Joint{T}}}
     bodyFixedFrameDefinitions::OrderedDict{RigidBody{T}, Set{Transform3D{T}}}
     bodyFixedFrameToBody::OrderedDict{CartesianFrame3D, RigidBody{T}}
-    jointToJointTransforms::Dict{Joint, Transform3D{T}}
+    jointToJointTransforms::Dict{Joint{T}, Transform3D{T}}
     gravity::SVector{3, T}
-    qRanges::Dict{Joint, UnitRange{Int64}}
-    vRanges::Dict{Joint, UnitRange{Int64}}
+    qRanges::Dict{Joint{T}, UnitRange{Int64}}
+    vRanges::Dict{Joint{T}, UnitRange{Int64}}
 
     function Mechanism(rootname::String; gravity::SVector{3, T} = SVector(zero(T), zero(T), T(-9.81)))
         rootBody = RigidBody{T}(rootname)
-        tree = Tree{RigidBody{T}, Joint}(rootBody)
+        tree = Tree{RigidBody{T}, Joint{T}}(rootBody)
         bodyFixedFrameDefinitions = @compat OrderedDict(rootBody => Set([Transform3D(T, rootBody.frame)]))
         bodyFixedFrameToBody = @compat OrderedDict(rootBody.frame => rootBody)
-        jointToJointTransforms = Dict{Joint, Transform3D{T}}()
-        qRanges = Dict{Joint, UnitRange{Int64}}()
-        vRanges = Dict{Joint, UnitRange{Int64}}()
+        jointToJointTransforms = Dict{Joint{T}, Transform3D{T}}()
+        qRanges = Dict{Joint{T}, UnitRange{Int64}}()
+        vRanges = Dict{Joint{T}, UnitRange{Int64}}()
         new(toposort(tree), bodyFixedFrameDefinitions, bodyFixedFrameToBody, jointToJointTransforms, gravity, qRanges, vRanges)
     end
 end
@@ -49,7 +49,7 @@ function add_body_fixed_frame!{T}(m::Mechanism{T}, body::RigidBody{T}, transform
     return transform
 end
 
-function attach!{T}(m::Mechanism{T}, parentBody::RigidBody{T}, joint::Joint, jointToParent::Transform3D{T}, childBody::RigidBody{T}, childToJoint::Transform3D{T} = Transform3D{T}(childBody.frame, joint.frameAfter))
+function attach!{T}(m::Mechanism{T}, parentBody::RigidBody{T}, joint::Joint{T}, jointToParent::Transform3D{T}, childBody::RigidBody{T}, childToJoint::Transform3D{T} = Transform3D{T}(childBody.frame, joint.frameAfter))
     vertex = insert!(tree(m), childBody, joint, parentBody)
     m.jointToJointTransforms[joint] = add_body_fixed_frame!(m, parentBody, jointToParent)
     framecheck(childToJoint.from, childBody.frame)

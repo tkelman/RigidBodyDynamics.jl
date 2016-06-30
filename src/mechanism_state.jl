@@ -1,17 +1,20 @@
-immutable UpdateTwistAndBias{X, C}
+immutable UpdateTwistAndBias{X, M, C}
     parentFrame::CartesianFrame3D
-    joint::Joint
+    joint::Joint{M}
     qJoint::VectorViewType{X}
     vJoint::VectorViewType{X}
     transformToRootCache::CacheElement{Transform3D{C}, UpdateTransformToRoot{C}}
-    parentCache::CacheElement{Tuple{Twist{C}, SpatialAcceleration{C}}, UpdateTwistAndBias{X, C}}
+    parentCache::CacheElement{Tuple{Twist{C}, SpatialAcceleration{C}}, UpdateTwistAndBias{X, M, C}}
 
     UpdateTwistAndBias() = new()
-    function UpdateTwistAndBias(parentFrame::CartesianFrame3D, joint::Joint, qJoint::VectorViewType{X}, vJoint::VectorViewType{X}, transformToRootCache::CacheElement{Transform3D{C}, UpdateTransformToRoot{C}}, parentCache::CacheElement{Tuple{Twist{C}, SpatialAcceleration{C}}, UpdateTwistAndBias{X, C}})
+    function UpdateTwistAndBias(
+            parentFrame::CartesianFrame3D, joint::Joint{M}, qJoint::VectorViewType{X}, vJoint::VectorViewType{X},
+            transformToRootCache::CacheElement{Transform3D{C}, UpdateTransformToRoot{C}},
+            parentCache::CacheElement{Tuple{Twist{C}, SpatialAcceleration{C}}, UpdateTwistAndBias{X, M, C}})
         new(parentFrame, joint, qJoint, vJoint, transformToRootCache, parentCache)
     end
 end
-@compat function (functor::UpdateTwistAndBias{X, C}){X, C}()
+@compat function (functor::UpdateTwistAndBias{X, M, C}){X, M, C}()
     parentFrame = functor.parentFrame
     joint = functor.joint
     qJoint = functor.qJoint
@@ -58,22 +61,22 @@ immutable MechanismState{X<:Real, M<:Real, C<:Real} # immutable, but can change 
     mechanism::Mechanism{M}
     q::Vector{X}
     v::Vector{X}
-    jointConfigurations::Dict{Joint, VectorViewType{X}}
-    jointVelocities::Dict{Joint, VectorViewType{X}}
+    jointConfigurations::Dict{Joint{M}, VectorViewType{X}}
+    jointVelocities::Dict{Joint{M}, VectorViewType{X}}
     transformCache::TransformCache{C}
-    twistsAndBiases::Dict{RigidBody{M}, CacheElement{Tuple{Twist{C}, SpatialAcceleration{C}}, UpdateTwistAndBias{X, C}}}
-    motionSubspaces::Dict{Joint, CacheElement{GeometricJacobian{C}}}
+    twistsAndBiases::Dict{RigidBody{M}, CacheElement{Tuple{Twist{C}, SpatialAcceleration{C}}, UpdateTwistAndBias{X, M, C}}}
+    motionSubspaces::Dict{Joint{M}, CacheElement{GeometricJacobian{C}}}
     spatialInertias::Dict{RigidBody{M}, CacheElement{SpatialInertia{C}, UpdateSpatialInertiaInWorld{M, C}}}
     crbInertias::Dict{RigidBody{M}, CacheElement{SpatialInertia{C}, UpdateCompositeRigidBodyInertia{M, C}}}
 
     function MechanismState(m::Mechanism{M})
         q = zeros(X, num_positions(m))
         v = zeros(X, num_velocities(m))
-        jointConfigurations = @compat Dict{Joint, VectorViewType{X}}([joint => view(q, m.qRanges[joint]) for joint in joints(m)]...)
-        jointVelocities = @compat Dict{Joint, VectorViewType{X}}([joint => view(v, m.vRanges[joint]) for joint in joints(m)]...)
+        jointConfigurations = @compat Dict{Joint{M}, VectorViewType{X}}([joint => view(q, m.qRanges[joint]) for joint in joints(m)]...)
+        jointVelocities = @compat Dict{Joint{M}, VectorViewType{X}}([joint => view(v, m.vRanges[joint]) for joint in joints(m)]...)
         transformCache = TransformCache(m, q)
-        twistsAndBiases = Dict{RigidBody{M}, CacheElement{Tuple{Twist{C}, SpatialAcceleration{C}}, UpdateTwistAndBias{X, C}}}()
-        motionSubspaces = Dict{Joint, CacheElement{GeometricJacobian}}()
+        twistsAndBiases = Dict{RigidBody{M}, CacheElement{Tuple{Twist{C}, SpatialAcceleration{C}}, UpdateTwistAndBias{X, M, C}}}()
+        motionSubspaces = Dict{Joint{M}, CacheElement{GeometricJacobian}}()
         spatialInertias = Dict{RigidBody{M}, CacheElement{SpatialInertia{C}, UpdateSpatialInertiaInWorld{M, C}}}()
         crbInertias = Dict{RigidBody{M}, CacheElement{SpatialInertia{C}, UpdateCompositeRigidBodyInertia{M, C}}}()
         new(m, q, v, jointConfigurations, jointVelocities, transformCache, twistsAndBiases, motionSubspaces, spatialInertias, crbInertias)
@@ -123,8 +126,8 @@ configuration_vector(state::MechanismState) = state.q
 velocity_vector(state::MechanismState) = state.v
 state_vector(state::MechanismState) = [configuration_vector(state); velocity_vector(state)]
 
-configuration_vector{T}(state::MechanismState, path::Path{RigidBody{T}, Joint}) = vcat([state.q[state.mechanism.qRanges[joint]] for joint in path.edgeData]...)
-velocity_vector{T}(state::MechanismState, path::Path{RigidBody{T}, Joint}) = vcat([state.v[state.mechanism.vRanges[joint]] for joint in path.edgeData]...)
+configuration_vector{X, M, C}(state::MechanismState{X, M, C}, path::Path{RigidBody{M}, Joint{M}}) = vcat([state.q[state.mechanism.qRanges[joint]] for joint in path.edgeData]...)
+velocity_vector{X, M, C}(state::MechanismState{X, M, C}, path::Path{RigidBody{M}, Joint{M}}) = vcat([state.v[state.mechanism.vRanges[joint]] for joint in path.edgeData]...)
 
 function set_configuration!(state::MechanismState, joint::Joint, q::Vector)
     view(state.q, state.mechanism.qRanges[joint])[:] = q
@@ -175,7 +178,7 @@ function MechanismState{X, M}(::Type{X}, m::Mechanism{M})
             # twists and bias accelerations
             transformToRootCache = state.transformCache.transformsToRoot[joint.frameAfter]
             parentCache = state.twistsAndBiases[parentBody]
-            twistCache = CacheElement(Tuple{Twist{C}, SpatialAcceleration{C}}, UpdateTwistAndBias{X, C}(parentFrame, joint, qJoint, vJoint, transformToRootCache, parentCache))
+            twistCache = CacheElement(Tuple{Twist{C}, SpatialAcceleration{C}}, UpdateTwistAndBias{X, M, C}(parentFrame, joint, qJoint, vJoint, transformToRootCache, parentCache))
             state.twistsAndBiases[body] = twistCache
 
             # motion subspaces
@@ -187,7 +190,7 @@ function MechanismState{X, M}(::Type{X}, m::Mechanism{M})
         else
             rootTwist = zero(Twist{C}, root.frame, root.frame, root.frame)
             rootBias = zero(SpatialAcceleration{C}, root.frame, root.frame, root.frame)
-            state.twistsAndBiases[body] = CacheElement((rootTwist, rootBias), UpdateTwistAndBias{X, C}())
+            state.twistsAndBiases[body] = CacheElement((rootTwist, rootBias), UpdateTwistAndBias{X, M, C}())
         end
 
         if !isroot(vertex)

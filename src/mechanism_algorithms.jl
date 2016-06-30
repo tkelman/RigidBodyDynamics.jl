@@ -64,7 +64,7 @@ function transform(state::MechanismState, accel::SpatialAcceleration, to::Cartes
 end
 
 
-function subtree_mass{T}(base::Tree{RigidBody{T}, Joint})
+function subtree_mass{T}(base::Tree{RigidBody{T}, Joint{T}})
     result = isroot(base) ? zero(T) : base.vertexData.inertia.mass
     for child in base.children
         result += subtree_mass(child)
@@ -91,7 +91,7 @@ end
 
 center_of_mass(state::MechanismState) = center_of_mass(state, bodies(state.mechanism))
 
-function geometric_jacobian{X, M, C}(state::MechanismState{X, M, C}, path::Path{RigidBody{M}, Joint})
+function geometric_jacobian{X, M, C}(state::MechanismState{X, M, C}, path::Path{RigidBody{M}, Joint{M}})
     copysign = (motionSubspace::GeometricJacobian, sign::Int64) -> sign < 0 ? -motionSubspace : motionSubspace
     motionSubspaces = [copysign(motion_subspace(state, joint), sign)::GeometricJacobian{C} for (joint, sign) in zip(path.edgeData, path.directions)]
     return hcat(motionSubspaces...)

@@ -1,13 +1,14 @@
 abstract JointType{T<:Real}
 
-immutable Joint
+immutable Joint{T<:Real}
     name::String
     frameBefore::CartesianFrame3D
     frameAfter::CartesianFrame3D
-    jointType::JointType
+    jointType::JointType{T}
 
-    Joint(name::String, jointType::JointType) = new(name, CartesianFrame3D(string("before_", name)), CartesianFrame3D(string("after_", name)), jointType)
+    Joint(name::String, jointType::JointType{T}) = new(name, CartesianFrame3D(string("before_", name)), CartesianFrame3D(string("after_", name)), jointType)
 end
+Joint{T}(name::String, jointType::JointType{T}) = Joint{T}(name, jointType)
 show(io::IO, joint::Joint) = print(io, "Joint \"$(joint.name)\": $(joint.jointType)")
 showcompact(io::IO, joint::Joint) = print(io, "$(joint.name)")
 
