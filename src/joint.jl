@@ -32,8 +32,8 @@ end
 @joint_type_dependent_function num_positions()
 @joint_type_dependent_function num_velocities()
 @joint_type_dependent_function bias_acceleration(q::AbstractVector, v::AbstractVector)
-@joint_type_dependent_function configuration_derivative_to_velocity(q::AbstractVector, q̇::AbstractVector)
-@joint_type_dependent_function velocity_to_configuration_derivative(q::AbstractVector, v::AbstractVector)
+@joint_type_dependent_function configuration_derivative_to_velocity(vOut::AbstractVector, q::AbstractVector, q̇::AbstractVector)
+@joint_type_dependent_function velocity_to_configuration_derivative(q̇Out::AbstractVector, q::AbstractVector, v::AbstractVector)
 @joint_type_dependent_function zero_configuration(t::Type)
 @joint_type_dependent_function rand_configuration(t::Type)
 @joint_type_dependent_function joint_twist(q::AbstractVector, v::AbstractVector)
@@ -61,7 +61,7 @@ num_positions(j::Joint, jt::QuaternionFloating) = 7::Int64
 num_velocities(j::Joint, jt::QuaternionFloating) = 6::Int64
 bias_acceleration{T<:Real}(j::Joint, jt::QuaternionFloating, q::AbstractVector{T}, v::AbstractVector{T}) = zero(SpatialAcceleration{T}, j.frameAfter, j.frameBefore, j.frameAfter)
 
-function configuration_derivative_to_velocity(j::Joint, jt::QuaternionFloating, q::AbstractVector, q̇::AbstractVector)
+function configuration_derivative_to_velocity(j::Joint, jt::QuaternionFloating, vOut::AbstractVector, q::AbstractVector, q̇::AbstractVector)
     length(q) == 7 || error("q has wrong size")
     length(q̇) == 7 || error("q̇ has wrong size")
     @inbounds quat = Quaternion(q[1], q[2], q[3], q[4])
@@ -70,11 +70,15 @@ function configuration_derivative_to_velocity(j::Joint, jt::QuaternionFloating, 
     @inbounds posdot = SVector{3}(q̇[5], q̇[6], q̇[7])
     linear = rotate(posdot, inv(quat))
     angularQuat = 2 * inv(quat) * quatdot
-    @inbounds ret = [angularQuat.v1; angularQuat.v2; angularQuat.v3; linear[1]; linear[2]; linear[3]]
-    ret
+    @inbounds vOut[1] = angularQuat.v1
+    @inbounds vOut[2] = angularQuat.v2
+    @inbounds vOut[3] = angularQuat.v3
+    @inbounds vOut[4] = linear[1]
+    @inbounds vOut[5] = linear[2]
+    @inbounds vOut[6] = linear[3]
 end
 
-function velocity_to_configuration_derivative(j::Joint, jt::QuaternionFloating, q::AbstractVector, v::AbstractVector)
+function velocity_to_configuration_derivative(j::Joint, jt::QuaternionFloating, q̇Out::AbstractVector, q::AbstractVector, v::AbstractVector)
     length(q) == 7 || error("q has wrong size")
     length(v) == 6 || error("v has wrong size")
     @inbounds quat = Quaternion(q[1], q[2], q[3], q[4])
@@ -83,8 +87,13 @@ function velocity_to_configuration_derivative(j::Joint, jt::QuaternionFloating, 
     @inbounds linear = SVector{3}(v[4], v[5], v[6])
     quatdot = 1/2 * quat * ωQuat
     posdot = rotate(linear, quat)
-    @inbounds ret = [quatdot.s; quatdot.v1; quatdot.v2; quatdot.v3; posdot[1]; posdot[2]; posdot[3]]
-    ret
+    @inbounds q̇Out[1] = quatdot.s
+    @inbounds q̇Out[2] = quatdot.v1
+    @inbounds q̇Out[3] = quatdot.v2
+    @inbounds q̇Out[4] = quatdot.v3
+    @inbounds q̇Out[5] = posdot[1]
+    @inbounds q̇Out[6] = posdot[2]
+    @inbounds q̇Out[7] = posdot[3]
 end
 
 function zero_configuration{T<:Real}(j::Joint, jt::QuaternionFloating, ::Type{T})
@@ -159,8 +168,8 @@ num_velocities(j::Joint, jt::OneDegreeOfFreedomFixedAxis) = 1::Int64
 zero_configuration{T<:Real}(j::Joint, jt::OneDegreeOfFreedomFixedAxis, ::Type{T}) = [zero(T)]
 rand_configuration{T<:Real}(j::Joint, jt::OneDegreeOfFreedomFixedAxis, ::Type{T}) = [rand(T)]
 bias_acceleration{T<:Real}(j::Joint, jt::OneDegreeOfFreedomFixedAxis, q::AbstractVector{T}, v::AbstractVector{T}) = zero(SpatialAcceleration{T}, j.frameAfter, j.frameBefore, j.frameAfter)
-configuration_derivative_to_velocity(j::Joint, jt::OneDegreeOfFreedomFixedAxis, q::AbstractVector, q̇::AbstractVector) = q̇
-velocity_to_configuration_derivative(j::Joint, jt::OneDegreeOfFreedomFixedAxis, q::AbstractVector, v::AbstractVector) = v
+configuration_derivative_to_velocity(j::Joint, jt::OneDegreeOfFreedomFixedAxis, vOut::AbstractVector, q::AbstractVector, q̇::AbstractVector) = copy!(vOut, q̇)
+velocity_to_configuration_derivative(j::Joint, jt::OneDegreeOfFreedomFixedAxis, q̇Out::AbstractVector, q::AbstractVector, v::AbstractVector) = copy!(q̇Out, v)
 
 
 immutable Fixed{T<:Real}<:JointType{T}
@@ -179,8 +188,8 @@ num_velocities(j::Joint, jt::Fixed) = 0::Int64
 zero_configuration{T<:Real}(j::Joint, jt::Fixed, ::Type{T}) = zeros(T, 0, 1)
 rand_configuration{T<:Real}(j::Joint, jt::Fixed, ::Type{T}) = zeros(T, 0, 1)
 bias_acceleration{T<:Real}(j::Joint, jt::Fixed, q::AbstractVector{T}, v::AbstractVector{T}) = zero(SpatialAcceleration{T}, j.frameAfter, j.frameBefore, j.frameAfter)
-configuration_derivative_to_velocity(j::Joint, jt::Fixed, q::AbstractVector, q̇::AbstractVector) = q̇
-velocity_to_configuration_derivative(j::Joint, jt::Fixed, q::AbstractVector, v::AbstractVector) = v
+configuration_derivative_to_velocity(j::Joint, jt::Fixed, vOut::AbstractVector, q::AbstractVector, q̇::AbstractVector) = copy!(vOut, q̇)
+velocity_to_configuration_derivative(j::Joint, jt::Fixed, q̇Out::AbstractVector, q::AbstractVector, v::AbstractVector) = copy!(q̇Out, v)
 
 
 num_positions(itr) = reduce((val, joint) -> val + num_positions(joint), 0, itr)

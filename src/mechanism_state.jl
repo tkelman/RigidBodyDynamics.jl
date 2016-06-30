@@ -58,6 +58,8 @@ immutable MechanismState{X<:Real, M<:Real, C<:Real} # immutable, but can change 
     mechanism::Mechanism{M}
     q::Vector{X}
     v::Vector{X}
+    jointConfigurations::Dict{Joint, VectorViewType{X}}
+    jointVelocities::Dict{Joint, VectorViewType{X}}
     transformCache::TransformCache{C}
     twistsAndBiases::Dict{RigidBody{M}, CacheElement{Tuple{Twist{C}, SpatialAcceleration{C}}, UpdateTwistAndBias{X, C}}}
     motionSubspaces::Dict{Joint, CacheElement{GeometricJacobian{C}}}
@@ -67,12 +69,14 @@ immutable MechanismState{X<:Real, M<:Real, C<:Real} # immutable, but can change 
     function MechanismState(m::Mechanism{M})
         q = zeros(X, num_positions(m))
         v = zeros(X, num_velocities(m))
+        jointConfigurations = @compat Dict{Joint, VectorViewType{X}}([joint => view(q, m.qRanges[joint]) for joint in joints(m)]...)
+        jointVelocities = @compat Dict{Joint, VectorViewType{X}}([joint => view(v, m.vRanges[joint]) for joint in joints(m)]...)
         transformCache = TransformCache(m, q)
         twistsAndBiases = Dict{RigidBody{M}, CacheElement{Tuple{Twist{C}, SpatialAcceleration{C}}, UpdateTwistAndBias{X, C}}}()
         motionSubspaces = Dict{Joint, CacheElement{GeometricJacobian}}()
         spatialInertias = Dict{RigidBody{M}, CacheElement{SpatialInertia{C}, UpdateSpatialInertiaInWorld{M, C}}}()
         crbInertias = Dict{RigidBody{M}, CacheElement{SpatialInertia{C}, UpdateCompositeRigidBodyInertia{M, C}}}()
-        new(m, q, v, transformCache, twistsAndBiases, motionSubspaces, spatialInertias, crbInertias)
+        new(m, q, v, jointConfigurations, jointVelocities, transformCache, twistsAndBiases, motionSubspaces, spatialInertias, crbInertias)
     end
 end
 

@@ -3,12 +3,8 @@ function configuration_derivative!{X}(out::AbstractVector{X}, state::MechanismSt
     vertices = mechanism.toposortedTree
     for i = 2 : length(vertices)
         joint = vertices[i].edgeToParentData
-        qRange = mechanism.qRanges[joint]
-        vRange = state.mechanism.vRanges[joint]
-        @inbounds qjoint = view(state.q, qRange)
-        @inbounds vjoint = view(state.v, vRange)
-        @inbounds q̇joint = view(out, qRange)
-        copy!(q̇joint, velocity_to_configuration_derivative(joint, qjoint, vjoint))
+        q̇joint = view(out, mechanism.qRanges[joint])
+        velocity_to_configuration_derivative(joint, q̇joint, state.jointConfigurations[joint], state.jointVelocities[joint])
     end
 end
 

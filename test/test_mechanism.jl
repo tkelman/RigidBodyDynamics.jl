@@ -45,7 +45,9 @@ facts("q̇ <-> v") do
     for joint in joints(mechanism)
         qjoint = q[mechanism.qRanges[joint]]
         q̇joint = q̇[mechanism.qRanges[joint]]
-        @fact velocity(x, joint) --> roughly(configuration_derivative_to_velocity(joint, qjoint, q̇joint); atol = 1e-12)
+        vBack = Vector{Float64}(num_velocities(joint))
+        configuration_derivative_to_velocity(joint, vBack, qjoint, q̇joint)
+        @fact velocity(x, joint) --> roughly(vBack; atol = 1e-12)
     end
 end
 
