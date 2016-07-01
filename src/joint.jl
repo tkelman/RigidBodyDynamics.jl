@@ -17,7 +17,7 @@ end
 show(io::IO, jt::QuaternionFloating) = print(io, "Quaternion floating joint")
 rand{T}(::Type{QuaternionFloating{T}}) = QuaternionFloating{T}()
 
-@inline function joint_transform{T<:Real}(j::Joint, jt::QuaternionFloating, q::AbstractVector{T})
+function joint_transform{T<:Real}(j::Joint, jt::QuaternionFloating, q::AbstractVector{T})
     length(q) == 7 || error("q has wrong size")
     @inbounds rot = Quaternion(q[1], q[2], q[3], q[4])
     Quaternions.normalize(rot)
@@ -33,7 +33,7 @@ end
 
 num_positions(j::Joint, jt::QuaternionFloating) = 7::Int64
 num_velocities(j::Joint, jt::QuaternionFloating) = 6::Int64
-@inline bias_acceleration{J, T<:Real}(j::Joint{J}, jt::QuaternionFloating{J}, q::AbstractVector{T}, v::AbstractVector{T}) = zero(SpatialAcceleration{promote_type(J, T)}, j.frameAfter, j.frameBefore, j.frameAfter)
+bias_acceleration{J, T<:Real}(j::Joint{J}, jt::QuaternionFloating{J}, q::AbstractVector{T}, v::AbstractVector{T}) = zero(SpatialAcceleration{promote_type(J, T)}, j.frameAfter, j.frameBefore, j.frameAfter)
 
 function configuration_derivative_to_velocity(j::Joint, jt::QuaternionFloating, vOut::AbstractVector, q::AbstractVector, q̇::AbstractVector)
     length(q) == 7 || error("q has wrong size")
@@ -97,7 +97,7 @@ function rand{T}(::Type{Prismatic{T}})
     Prismatic(axis / norm(axis))
 end
 
-@inline joint_transform{T1<:Real, T2}(j::Joint, jt::Prismatic{T2}, q::AbstractVector{T1}) = Transform3D(j.frameAfter, j.frameBefore, q[1] * jt.translation_axis)
+joint_transform{T1<:Real, T2}(j::Joint, jt::Prismatic{T2}, q::AbstractVector{T1}) = Transform3D(j.frameAfter, j.frameBefore, q[1] * jt.translation_axis)
 
 function joint_twist{T<:Real}(j::Joint, jt::Prismatic, q::AbstractVector{T}, v::AbstractVector{T})
     return Twist(j.frameAfter, j.frameBefore, j.frameAfter, zeros(SVector{3, T}), jt.translation_axis * v[1])
@@ -119,7 +119,7 @@ function rand{T}(::Type{Revolute{T}})
     Revolute(axis / norm(axis))
 end
 
-@inline function joint_transform{T1, T2}(j::Joint, jt::Revolute{T2}, q::AbstractVector{T1})
+function joint_transform{T1, T2}(j::Joint, jt::Revolute{T2}, q::AbstractVector{T1})
     T = promote_type(T1, T2)
     arg = q[1] / T(2)
     s = sin(arg)
@@ -142,7 +142,7 @@ num_positions(j::Joint, jt::OneDegreeOfFreedomFixedAxis) = 1::Int64
 num_velocities(j::Joint, jt::OneDegreeOfFreedomFixedAxis) = 1::Int64
 zero_configuration{T<:Real}(j::Joint, jt::OneDegreeOfFreedomFixedAxis, ::Type{T}) = [zero(T)]
 rand_configuration{T<:Real}(j::Joint, jt::OneDegreeOfFreedomFixedAxis, ::Type{T}) = [rand(T)]
-@inline bias_acceleration{J, T<:Real}(j::Joint{J}, jt::OneDegreeOfFreedomFixedAxis{J}, q::AbstractVector{T}, v::AbstractVector{T}) = zero(SpatialAcceleration{promote_type(J, T)}, j.frameAfter, j.frameBefore, j.frameAfter)
+bias_acceleration{J, T<:Real}(j::Joint{J}, jt::OneDegreeOfFreedomFixedAxis{J}, q::AbstractVector{T}, v::AbstractVector{T}) = zero(SpatialAcceleration{promote_type(J, T)}, j.frameAfter, j.frameBefore, j.frameAfter)
 function configuration_derivative_to_velocity(j::Joint, jt::OneDegreeOfFreedomFixedAxis, vOut::AbstractVector, q::AbstractVector, q̇::AbstractVector)
     copy!(vOut, q̇)
     nothing
@@ -157,7 +157,7 @@ immutable Fixed{T<:Real}<:JointType{T}
 end
 show(io::IO, jt::Fixed) = print(io, "Fixed joint")
 rand{T}(::Type{Fixed{T}}) = Fixed{T}()
-@inline joint_transform{T}(j::Joint, jt::Fixed, q::AbstractVector{T}) = Transform3D(T, j.frameAfter, j.frameBefore)
+joint_transform{T}(j::Joint, jt::Fixed, q::AbstractVector{T}) = Transform3D(T, j.frameAfter, j.frameBefore)
 function joint_twist{T<:Real}(j::Joint, jt::Fixed, q::AbstractVector{T}, v::AbstractVector{T})
     zero(Twist{T}, j.frameAfter, j.frameBefore, j.frameAfter)
 end
@@ -168,7 +168,7 @@ num_positions(j::Joint, jt::Fixed) = 0::Int64
 num_velocities(j::Joint, jt::Fixed) = 0::Int64
 zero_configuration{T<:Real}(j::Joint, jt::Fixed, ::Type{T}) = zeros(T, 0)
 rand_configuration{T<:Real}(j::Joint, jt::Fixed, ::Type{T}) = zeros(T, 0)
-@inline bias_acceleration{J, T<:Real}(j::Joint{J}, jt::Fixed{J}, q::AbstractVector{T}, v::AbstractVector{T}) = zero(SpatialAcceleration{promote_type(J, T)}, j.frameAfter, j.frameBefore, j.frameAfter)
+bias_acceleration{J, T<:Real}(j::Joint{J}, jt::Fixed{J}, q::AbstractVector{T}, v::AbstractVector{T}) = zero(SpatialAcceleration{promote_type(J, T)}, j.frameAfter, j.frameBefore, j.frameAfter)
 function configuration_derivative_to_velocity(j::Joint, jt::Fixed, vOut::AbstractVector, q::AbstractVector, q̇::AbstractVector)
     copy!(vOut, q̇)
     nothing
