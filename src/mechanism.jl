@@ -1,20 +1,20 @@
 type Mechanism{T<:Real}
-    toposortedTree::Vector{TreeVertex{RigidBody{T}, Joint}}
+    toposortedTree::Vector{TreeVertex{RigidBody{T}, Joint{T}}}
     bodyFixedFrameDefinitions::Dict{RigidBody{T}, Set{Transform3D{T}}}
     bodyFixedFrameToBody::Dict{CartesianFrame3D, RigidBody{T}}
-    jointToJointTransforms::Dict{Joint, Transform3D{T}}
+    jointToJointTransforms::Dict{Joint{T}, Transform3D{T}}
     gravitationalAcceleration::FreeVector3D{T}
-    qRanges::Dict{Joint, UnitRange{Int64}}
-    vRanges::Dict{Joint, UnitRange{Int64}}
+    qRanges::Dict{Joint{T}, UnitRange{Int64}}
+    vRanges::Dict{Joint{T}, UnitRange{Int64}}
 
     function Mechanism(rootBody::RigidBody{T}; gravity::SVector{3, T} = SVector(zero(T), zero(T), T(-9.81)))
-        tree = Tree{RigidBody{T}, Joint}(rootBody)
+        tree = Tree{RigidBody{T}, Joint{T}}(rootBody)
         bodyFixedFrameDefinitions = Dict(rootBody => Set([Transform3D(T, rootBody.frame)]))
         bodyFixedFrameToBody = Dict(rootBody.frame => rootBody)
-        jointToJointTransforms = Dict{Joint, Transform3D{T}}()
+        jointToJointTransforms = Dict{Joint{T}, Transform3D{T}}()
         gravitationalAcceleration = FreeVector3D(rootBody.frame, gravity)
-        qRanges = Dict{Joint, UnitRange{Int64}}()
-        vRanges = Dict{Joint, UnitRange{Int64}}()
+        qRanges = Dict{Joint{T}, UnitRange{Int64}}()
+        vRanges = Dict{Joint{T}, UnitRange{Int64}}()
         new(toposort(tree), bodyFixedFrameDefinitions, bodyFixedFrameToBody, jointToJointTransforms, gravitationalAcceleration, qRanges, vRanges)
     end
 end

@@ -1,4 +1,4 @@
-mechanism = rand_tree_mechanism(Float64, [QuaternionFloating; [Revolute{Float64} for i = 1 : 10]; [Fixed for i = 1 : 5]; [Prismatic{Float64} for i = 1 : 10]]...)
+mechanism = rand_tree_mechanism(Float64, [QuaternionFloating{Float64}; [Revolute{Float64} for i = 1 : 10]; [Fixed{Float64} for i = 1 : 5]; [Prismatic{Float64} for i = 1 : 10]]...)
 x = MechanismState(Float64, mechanism)
 rand!(x)
 
@@ -40,12 +40,14 @@ end
 
 facts("q̇ <-> v") do
     q = configuration_vector(x)
-    q̇ = configuration_derivative(x)
+    q̇ = configuration_derivative(x) #TODO
     v = velocity_vector(x)
     for joint in joints(mechanism)
         qjoint = q[mechanism.qRanges[joint]]
         q̇joint = q̇[mechanism.qRanges[joint]]
-        @fact velocity(x, joint) --> roughly(configuration_derivative_to_velocity(joint, qjoint, q̇joint); atol = 1e-12)
+        vJoint = Vector{Float64}(num_velocities(joint))
+        configuration_derivative_to_velocity!(joint, vJoint, qjoint, q̇joint)
+        @fact velocity(x, joint) --> roughly(vJoint; atol = 1e-12)
     end
 end
 
@@ -217,7 +219,7 @@ facts("inverse dynamics / gravity term") do
 end
 
 facts("inverse dynamics / external wrenches") do
-    mechanism = rand_chain_mechanism(Float64, [QuaternionFloating; [Revolute{Float64} for i = 1 : 10]; [Prismatic{Float64} for i = 1 : 10]]...) # what really matters is that there's a floating joint first
+    mechanism = rand_chain_mechanism(Float64, [QuaternionFloating{Float64}; [Revolute{Float64} for i = 1 : 10]; [Prismatic{Float64} for i = 1 : 10]]...) # what really matters is that there's a floating joint first
     x = MechanismState(Float64, mechanism)
     rand_configuration!(x)
     rand_velocity!(x)
@@ -252,7 +254,7 @@ facts("inverse dynamics / external wrenches") do
 end
 
 facts("dynamics / inverse dynamics") do
-    mechanism = rand_tree_mechanism(Float64, [QuaternionFloating; [Revolute{Float64} for i = 1 : 10]; [Prismatic{Float64} for i = 1 : 10]]...)
+    mechanism = rand_tree_mechanism(Float64, [QuaternionFloating{Float64}; [Revolute{Float64} for i = 1 : 10]; [Prismatic{Float64} for i = 1 : 10]]...)
     x = MechanismState(Float64, mechanism)
     rand!(x)
 
@@ -267,10 +269,10 @@ facts("dynamics / inverse dynamics") do
 end
 
 facts("attach mechanism") do
-    mechanism = rand_tree_mechanism(Float64, [QuaternionFloating; [Revolute{Float64} for i = 1 : 10]; [Prismatic{Float64} for i = 1 : 10]]...)
+    mechanism = rand_tree_mechanism(Float64, [QuaternionFloating{Float64}; [Revolute{Float64} for i = 1 : 10]; [Prismatic{Float64} for i = 1 : 10]]...)
     nq = num_positions(mechanism)
     nv = num_velocities(mechanism)
-    mechanism2 = rand_tree_mechanism(Float64, [QuaternionFloating; [Revolute{Float64} for i = 1 : 5]; [Prismatic{Float64} for i = 1 : 5]]...)
+    mechanism2 = rand_tree_mechanism(Float64, [QuaternionFloating{Float64}; [Revolute{Float64} for i = 1 : 5]; [Prismatic{Float64} for i = 1 : 5]]...)
     connection = Joint("connection", rand(Revolute{Float64}))
     parentBody = rand(bodies(mechanism))
     attach!(mechanism, parentBody, connection, rand(Transform3D{Float64}, connection.frameBefore, parentBody.frame), mechanism2)
@@ -288,7 +290,7 @@ facts("attach mechanism") do
     rand!(xSingle)
     qSingle = configuration_vector(xSingle)
     nqSingle = length(qSingle)
-    connection = Joint("fixed", Fixed())
+    connection = Joint("fixed", Fixed{Float64}())
     parentBody = root_body(doubleAcrobot)
     jointToParent = Transform3D(connection.frameBefore, parentBody.frame, rand(SVector{3}))
     childToJoint = Transform3D(root_body(acrobot2).frame, connection.frameAfter, rand(SVector{3}))
