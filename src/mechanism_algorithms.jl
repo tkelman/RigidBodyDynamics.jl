@@ -1,72 +1,3 @@
-function configuration_derivative!{X}(out::AbstractVector{X}, state::MechanismState{X})
-    mechanism = state.mechanism
-    for vertex in non_root_vertices(mechanism)
-        joint = vertex.edgeToParentData
-        qRange = mechanism.qRanges[joint]
-        vRange = state.mechanism.vRanges[joint]
-        @inbounds qjoint = view(state.q, qRange)
-        @inbounds vjoint = view(state.v, vRange)
-        @inbounds q̇joint = view(out, qRange)
-        velocity_to_configuration_derivative!(joint, q̇joint, qjoint, vjoint)
-    end
-end
-
-function configuration_derivative{X}(state::MechanismState{X})
-    ret = Vector{X}(num_positions(state))
-    configuration_derivative!(ret, state)
-    ret
-end
-
-transform_to_parent(state::MechanismState, frame::CartesianFrame3D) = transform_to_parent(state.transformCache, frame)
-transform_to_root(state::MechanismState, frame::CartesianFrame3D) = transform_to_root(state.transformCache, frame)
-relative_transform(state::MechanismState, from::CartesianFrame3D, to::CartesianFrame3D) = relative_transform(state.transformCache, from, to)
-
-twist_wrt_world{X, M}(state::MechanismState{X, M}, body::RigidBody{M}) = get(state.twistsAndBiases[body])[1]
-relative_twist{X, M}(state::MechanismState{X, M}, body::RigidBody{M}, base::RigidBody{M}) = -twist_wrt_world(state, base) + twist_wrt_world(state, body)
-function relative_twist(state::MechanismState, bodyFrame::CartesianFrame3D, baseFrame::CartesianFrame3D)
-    twist = relative_twist(state, state.mechanism.bodyFixedFrameToBody[bodyFrame],  state.mechanism.bodyFixedFrameToBody[baseFrame])
-    return Twist(bodyFrame, baseFrame, twist.frame, twist.angular, twist.linear)
-end
-
-bias_acceleration{X, M}(state::MechanismState{X, M}, body::RigidBody{M}) = get(state.twistsAndBiases[body])[2]
-
-motion_subspace(state::MechanismState, joint::Joint) = get(state.motionSubspaces[joint])
-
-spatial_inertia{X, M}(state::MechanismState{X, M}, body::RigidBody{M}) = get(state.spatialInertias[body])
-
-crb_inertia{X, M}(state::MechanismState{X, M}, body::RigidBody{M}) = get(state.crbInertias[body])
-
-function transform(state::MechanismState, point::Point3D, to::CartesianFrame3D)
-    point.frame == to && return point # nothing to be done
-    relative_transform(state, point.frame, to) * point
-end
-
-function transform(state::MechanismState, vector::FreeVector3D, to::CartesianFrame3D)
-    vector.frame == to && return vector # nothing to be done
-    relative_transform(state, vector.frame, to) * vector
-end
-
-function transform(state::MechanismState, twist::Twist, to::CartesianFrame3D)
-    twist.frame == to && return twist # nothing to be done
-    transform(twist, relative_transform(state, twist.frame, to))
-end
-
-function transform(state::MechanismState, wrench::Wrench, to::CartesianFrame3D)
-    wrench.frame == to && return wrench # nothing to be done
-    transform(wrench, relative_transform(state, wrench.frame, to))
-end
-
-function transform(state::MechanismState, accel::SpatialAcceleration, to::CartesianFrame3D)
-    accel.frame == to && return accel # nothing to be done
-    oldToRoot = transform_to_root(state, accel.frame)
-    rootToOld = inv(oldToRoot)
-    twistOfBodyWrtBase = transform(relative_twist(state, accel.body, accel.base), rootToOld)
-    twistOfOldWrtNew = transform(relative_twist(state, accel.frame, to), rootToOld)
-    oldToNew = inv(transform_to_root(state, to)) * oldToRoot
-    return transform(accel, oldToNew, twistOfOldWrtNew, twistOfBodyWrtBase)
-end
-
-
 function subtree_mass{T}(base::Tree{RigidBody{T}, Joint{T}})
     result = isroot(base) ? zero(T) : base.vertexData.inertia.mass
     for child in base.children
@@ -74,7 +5,9 @@ function subtree_mass{T}(base::Tree{RigidBody{T}, Joint{T}})
     end
     return result
 end
+
 mass(m::Mechanism) = subtree_mass(tree(m))
+
 mass(state::MechanismState) = mass(state.mechanism)
 
 function center_of_mass{X, M, C}(state::MechanismState{X, M, C}, itr)
@@ -88,7 +21,7 @@ function center_of_mass{X, M, C}(state::MechanismState{X, M, C}, itr)
         mass += inertia.mass
     end
     com /= mass
-    return com
+    com
 end
 
 center_of_mass(state::MechanismState) = center_of_mass(state, non_root_bodies(state.mechanism))
@@ -96,7 +29,7 @@ center_of_mass(state::MechanismState) = center_of_mass(state, non_root_bodies(st
 function geometric_jacobian{X, M, C}(state::MechanismState{X, M, C}, path::Path{RigidBody{M}, Joint{M}})
     copysign = (motionSubspace::GeometricJacobian, sign::Int64) -> sign < 0 ? -motionSubspace : motionSubspace
     motionSubspaces = [copysign(motion_subspace(state, joint), sign)::GeometricJacobian for (joint, sign) in zip(path.edgeData, path.directions)]
-    return hcat(motionSubspaces...)
+    hcat(motionSubspaces...)
 end
 
 function relative_acceleration{X, M, V}(state::MechanismState{X, M}, body::RigidBody{M}, base::RigidBody{M}, v̇::AbstractVector{V})
@@ -104,13 +37,18 @@ function relative_acceleration{X, M, V}(state::MechanismState{X, M}, body::Rigid
     J = geometric_jacobian(state, p)
     v̇path = vcat([v̇[state.mechanism.vRanges[joint]] for joint in p.edgeData]...)
     bias = -bias_acceleration(state, base) + bias_acceleration(state, body)
-    return SpatialAcceleration(J, v̇path) + bias
+    SpatialAcceleration(J, v̇path) + bias
 end
 
-kinetic_energy{X, M}(state::MechanismState{X, M}, body::RigidBody{M}) = kinetic_energy(spatial_inertia(state, body), twist_wrt_world(state, body))
+function kinetic_energy{X, M}(state::MechanismState{X, M}, body::RigidBody{M})
+    kinetic_energy(spatial_inertia(state, body), twist_wrt_world(state, body))
+end
+
 kinetic_energy{X, M}(state::MechanismState{X, M}, itr) = sum(body::RigidBody -> kinetic_energy(state, body), itr)
+
 kinetic_energy(state::MechanismState) = kinetic_energy(state, non_root_bodies(state.mechanism))
 
+#TODO: gravitational
 function potential_energy{X, M, C}(state::MechanismState{X, M, C})
     m = mass(state.mechanism)
     gravitationalForce = m * state.mechanism.gravitationalAcceleration

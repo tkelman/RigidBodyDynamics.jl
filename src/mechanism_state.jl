@@ -1,93 +1,72 @@
-immutable UpdateTwistAndBias{M, C}
-    parentFrame::CartesianFrame3D
+type JointAndState{M, X}
     joint::Joint{M}
-    qJoint::SubArray{C,1,Array{C,1},Tuple{UnitRange{Int64}},true}
-    vJoint::SubArray{C,1,Array{C,1},Tuple{UnitRange{Int64}},true}
-    transformToRootCache::CacheElement{Transform3D{C}, UpdateTransformToRoot{C}}
-    parentCache::CacheElement{Tuple{Twist{C}, SpatialAcceleration{C}}, UpdateTwistAndBias{M, C}}
-
-    UpdateTwistAndBias() = new()
-    function UpdateTwistAndBias(parentFrame::CartesianFrame3D, joint::Joint{M}, qJoint::SubArray{C,1,Array{C,1},Tuple{UnitRange{Int64}},true}, vJoint::SubArray{C,1,Array{C,1},Tuple{UnitRange{Int64}},true}, transformToRootCache::CacheElement{Transform3D{C}, UpdateTransformToRoot{C}}, parentCache::CacheElement{Tuple{Twist{C}, SpatialAcceleration{C}}, UpdateTwistAndBias{M, C}})
-        new(parentFrame, joint, qJoint, vJoint, transformToRootCache, parentCache)
-    end
-end
-@compat function (functor::UpdateTwistAndBias)()
-    parentFrame = functor.parentFrame
-    joint = functor.joint
-    qJoint = functor.qJoint
-    vJoint = functor.vJoint
-    parent = get(functor.parentCache)
-    parentTwist = parent[1]
-    parentBias = parent[2]
-
-    bodyToRoot = get(functor.transformToRootCache)
-    jointTwist = joint_twist(joint, qJoint, vJoint)#::Twist{C}
-    jointTwist = Twist(joint.frameAfter, parentFrame, jointTwist.frame, jointTwist.angular, jointTwist.linear) # to make the frames line up;
-    twist = parentTwist + transform(jointTwist, bodyToRoot)
-
-    bias = bias_acceleration(joint, qJoint, vJoint)#::SpatialAcceleration{C}
-    bias = SpatialAcceleration(joint.frameAfter, parentFrame, bias.frame, bias.angular, bias.linear) # to make the frames line up
-    rootToBody = inv(bodyToRoot)
-    twistOfBodyWrtRoot = transform(twist, rootToBody)
-    bias = parentBias + transform(bias, bodyToRoot, twistOfBodyWrtRoot, jointTwist)
-
-    (twist, bias)
+    q::VectorSegment{X}
+    v::VectorSegment{X}
 end
 
-immutable UpdateSpatialInertiaInWorld{M, C}
-    body::RigidBody{M}
-    transformToRootCache::CacheElement{Transform3D{C}, UpdateTransformToRoot{C}}
-end
-@compat function (functor::UpdateSpatialInertiaInWorld)()
-    transform(functor.body.inertia, get(functor.transformToRootCache))
-end
-
-immutable UpdateCompositeRigidBodyInertia{M, C}
-    this::CacheElement{SpatialInertia{C}, UpdateSpatialInertiaInWorld{M, C}}
-    children::Vector{CacheElement{SpatialInertia{C}, UpdateCompositeRigidBodyInertia{M, C}}}
-end
-@compat function (functor::UpdateCompositeRigidBodyInertia)()
-    ret = get(functor.this)
-    for child in functor.children
-        ret += get(child)
-    end
-    ret
-end
-
-immutable MechanismState{X<:Real, M<:Real, C<:Real} # immutable, but can change q and v and use the setdirty! method to have cache elements recomputed
+immutable MechanismState{X<:Real, M<:Real, C<:Real}
     mechanism::Mechanism{M}
     q::Vector{X}
     v::Vector{X}
-    transformCache::TransformCache{C}
-    twistsAndBiases::Dict{RigidBody{M}, CacheElement{Tuple{Twist{C}, SpatialAcceleration{C}}, UpdateTwistAndBias{M, C}}}
-    motionSubspaces::Dict{Joint{M}, CacheElement{GeometricJacobian}}
-    spatialInertias::Dict{RigidBody{M}, CacheElement{SpatialInertia{C}, UpdateSpatialInertiaInWorld{M, C}}}
-    crbInertias::Dict{RigidBody{M}, CacheElement{SpatialInertia{C}, UpdateCompositeRigidBodyInertia{M, C}}}
+    frameAfterJointToJointAndState::Dict{CartesianFrame3D, JointAndState{M, X}}
+    successorBodyToJointAndState::Dict{RigidBody{M}, JointAndState{M, X}}
+    jointTransforms::Dict{Joint{M}, CacheElement{Transform3D{C}}}
+    fixedTransformsToParent::Dict{CartesianFrame3D, Transform3D{C}}
+    transformsToRoot::Dict{CartesianFrame3D, CacheElement{Transform3D{C}}}
+    twists::Dict{RigidBody{M}, CacheElement{Twist{C}}}
+    biasAccelerations::Dict{RigidBody{M}, CacheElement{SpatialAcceleration{C}}}
+    motionSubspaces::Dict{Joint{M}, CacheElement{GeometricJacobian}} # TODO: fix type
+    spatialInertias::Dict{RigidBody{M}, CacheElement{SpatialInertia{C}}}
+    crbInertias::Dict{RigidBody{M}, CacheElement{SpatialInertia{C}}}
 
     function MechanismState(m::Mechanism{M})
-        q = zeros(X, num_positions(m))
-        v = zeros(X, num_velocities(m))
-        transformCache = TransformCache(m, q)
-        twistsAndBiases = Dict{RigidBody{M}, CacheElement{Tuple{Twist{C}, SpatialAcceleration{C}}, UpdateTwistAndBias{M, C}}}()
-        motionSubspaces = Dict{Joint{M}, CacheElement{GeometricJacobian}}()
-        spatialInertias = Dict{RigidBody{M}, CacheElement{SpatialInertia{C}, UpdateSpatialInertiaInWorld{M, C}}}()
-        crbInertias = Dict{RigidBody{M}, CacheElement{SpatialInertia{C}, UpdateCompositeRigidBodyInertia{M, C}}}()
-        new(m, q, v, transformCache, twistsAndBiases, motionSubspaces, spatialInertias, crbInertias)
+        q = Vector{X}(num_positions(m))
+        v = Vector{X}(num_velocities(m))
+        state = new(m, q, v, Dict(), Dict(), Dict(), Dict(), Dict(), Dict(), Dict(), Dict(), Dict(), Dict())
+        state.fixedTransformsToParent[root_frame(m)] = Transform3D{C}(root_frame(m), root_frame(m))
+        zero!(state)
+        state
     end
 end
 
+eltype{X, M, C}(::MechanismState{X, M, C}) = C
 show{X, M, C}(io::IO, ::MechanismState{X, M, C}) = print(io, "MechanismState{$X, $M, $C}(…)")
 num_positions(state::MechanismState) = length(state.q)
 num_velocities(state::MechanismState) = length(state.v)
 state_vector_eltype{X, M, C}(state::MechanismState{X, M, C}) = X
 mechanism_eltype{X, M, C}(state::MechanismState{X, M, C}) = M
-cache_eltype{X, M, C}(state::MechanismState{X, M, C}) = C
 configuration(state::MechanismState, joint::Joint) = view(state.q, state.mechanism.qRanges[joint])
 velocity(state::MechanismState, joint::Joint) = view(state.v, state.mechanism.vRanges[joint])
+configuration_vector(state::MechanismState) = state.q
+velocity_vector(state::MechanismState) = state.v
+state_vector(state::MechanismState) = [configuration_vector(state); velocity_vector(state)] # TODO: consider having x be a member and using view for q and v
+configuration_vector{T}(state::MechanismState, path::Path{RigidBody{T}, Joint{T}}) = vcat([state.q[state.mechanism.qRanges[joint]] for joint in path.edgeData]...)
+velocity_vector{T}(state::MechanismState, path::Path{RigidBody{T}, Joint{T}}) = vcat([state.v[state.mechanism.vRanges[joint]] for joint in path.edgeData]...)
+
+function configuration_derivative!{X}(out::AbstractVector{X}, state::MechanismState{X})
+    mechanism = state.mechanism
+    for vertex in non_root_vertices(mechanism)
+        joint = vertex.edgeToParentData
+        qRange = mechanism.qRanges[joint]
+        vRange = state.mechanism.vRanges[joint]
+        @inbounds qjoint = view(state.q, qRange)
+        @inbounds vjoint = view(state.v, vRange)
+        @inbounds q̇joint = view(out, qRange)
+        velocity_to_configuration_derivative!(joint, q̇joint, qjoint, vjoint)
+    end
+end
+
+function configuration_derivative{X}(state::MechanismState{X})
+    ret = Vector{X}(num_positions(state))
+    configuration_derivative!(ret, state)
+    ret
+end
 
 function setdirty!(state::MechanismState)
-    setdirty!(state.transformCache)
-    for element in values(state.twistsAndBiases) setdirty!(element) end
+    for element in values(state.jointTransforms) setdirty!(element) end
+    for element in values(state.transformsToRoot) setdirty!(element) end
+    for element in values(state.twists) setdirty!(element) end
+    for element in values(state.biasAccelerations) setdirty!(element) end
     for element in values(state.motionSubspaces) setdirty!(element) end
     for element in values(state.spatialInertias) setdirty!(element) end
     for element in values(state.crbInertias) setdirty!(element) end
@@ -124,13 +103,6 @@ end
 
 rand!(state::MechanismState) = begin rand_configuration!(state); rand_velocity!(state) end
 
-configuration_vector(state::MechanismState) = state.q
-velocity_vector(state::MechanismState) = state.v
-state_vector(state::MechanismState) = [configuration_vector(state); velocity_vector(state)]
-
-configuration_vector{T}(state::MechanismState, path::Path{RigidBody{T}, Joint{T}}) = vcat([state.q[state.mechanism.qRanges[joint]] for joint in path.edgeData]...)
-velocity_vector{T}(state::MechanismState, path::Path{RigidBody{T}, Joint{T}}) = vcat([state.v[state.mechanism.vRanges[joint]] for joint in path.edgeData]...)
-
 function set_configuration!(state::MechanismState, joint::Joint, q::AbstractVector)
     configuration(state, joint)[:] = q
     setdirty!(state)
@@ -160,61 +132,229 @@ function set!(state::MechanismState, x::AbstractVector)
     setdirty!(state)
 end
 
+function add_transform_to_root_cache!(state::MechanismState, frame::CartesianFrame3D)
+    C = eltype(state)
+    state.transformsToRoot[frame] = CacheElement(Transform3D(C, frame, root_frame(state.mechanism)))
+    setdirty!(state)
+end
+
+function add_frame!(state::MechanismState, transform::Transform3D)
+    C = eltype(state)
+    state.fixedTransformsToParent[transform.from] = convert(Transform3D{C}, transform)
+    add_transform_to_root_cache!(state, transform.from)
+end
+
+function add_frame!{X, M, C}(state::MechanismState{X, M, C}, joint::Joint{M}, q::VectorSegment{X}, v::VectorSegment{X})
+    state.jointTransforms[joint] = CacheElement{Transform3D{C}}()
+    add_transform_to_root_cache!(state, joint.frameAfter)
+end
+
 function MechanismState{X, M}(::Type{X}, m::Mechanism{M})
-    typealias C promote_type(X, M)
-    root = root_body(m)
+    C = promote_type(M, X)
     state = MechanismState{X, M, C}(m)
-    zero!(state)
+
+    state.transformsToRoot[root_frame(m)] = CacheElement{Transform3D{C}}()
 
     for vertex in m.toposortedTree
         body = vertex.vertexData
         if !isroot(vertex)
-            parentVertex = vertex.parent
-            parentBody = parentVertex.vertexData
             joint = vertex.edgeToParentData
-            parentFrame = default_frame(m, parentBody)
 
-            qJoint = view(state.q, state.mechanism.qRanges[joint])
-            vJoint = view(state.v, state.mechanism.vRanges[joint])
+            qJoint = configuration(state, joint)
+            vJoint = velocity(state, joint)
+            jointAndState = JointAndState(joint, qJoint, vJoint)
+            state.frameAfterJointToJointAndState[joint.frameAfter] = jointAndState
+            state.successorBodyToJointAndState[body] = jointAndState
+            add_frame!(state, m.jointToJointTransforms[joint])
+            add_frame!(state, joint, qJoint, vJoint)
+            state.motionSubspaces[joint] = CacheElement{GeometricJacobian}()
+        end
 
-            # twists and bias accelerations
-            transformToRootCache = state.transformCache.transformsToRoot[joint.frameAfter]
-            parentCache = state.twistsAndBiases[parentBody]
-            twistCache = CacheElement(Tuple{Twist{C}, SpatialAcceleration{C}}, UpdateTwistAndBias{M, C}(parentFrame, joint, qJoint, vJoint, transformToRootCache, parentCache))
-            state.twistsAndBiases[body] = twistCache
+        random_frame = body.frame # just used to initialize
+        state.twists[body] = CacheElement{Twist{C}}()
+        state.biasAccelerations[body] = CacheElement{SpatialAcceleration{C}}()
+        state.spatialInertias[body] = CacheElement{SpatialInertia{C}}()
+        state.crbInertias[body] = CacheElement{SpatialInertia{C}}()
 
-            # motion subspaces
-            update_motion_subspace = () -> begin
-                S = transform(motion_subspace(joint, qJoint), get(transformToRootCache))
-                GeometricJacobian(S.body, parentFrame, S.frame, S.angular, S.linear) # to make frames line up
+        # additional body fixed frames
+        for transform in m.bodyFixedFrameDefinitions[body]
+            if transform.from != transform.to
+                add_frame!(state, transform)
             end
-            state.motionSubspaces[joint] = CacheElement(GeometricJacobian, update_motion_subspace)
-        else
-            rootTwist = zero(Twist{C}, root.frame, root.frame, root.frame)
-            rootBias = zero(SpatialAcceleration{C}, root.frame, root.frame, root.frame)
-            state.twistsAndBiases[body] = CacheElement((rootTwist, rootBias), UpdateTwistAndBias{M, C}())
-        end
-
-        if !isroot(vertex)
-            # spatial inertias needs to be done after adding additional body fixed frames
-            # because they may be expressed in one of those frames
-            parentBody = vertex.parent.vertexData
-
-            # inertias
-            transformBodyToRootCache = state.transformCache.transformsToRoot[body.inertia.frame]
-
-            state.spatialInertias[body] = CacheElement(SpatialInertia{C}, UpdateSpatialInertiaInWorld(body, transformBodyToRootCache))
         end
     end
+    state
+end
 
-    # crb inertias
-    for i = length(m.toposortedTree) : -1 : 2
-        vertex = m.toposortedTree[i]
+function transform_to_parent(state::MechanismState, frame::CartesianFrame3D)
+    if haskey(state.frameAfterJointToJointAndState, frame)
+        # joint transform
+        info = state.frameAfterJointToJointAndState[frame]
+        element = state.jointTransforms[info.joint]
+        if element.dirty
+            update!(element, joint_transform(info.joint, info.q))
+        end
+        ret = get(element)
+    else
+        # fixed transform
+        ret = state.fixedTransformsToParent[frame]
+    end
+    ret
+end
+
+function transform_to_root(state::MechanismState, frame::CartesianFrame3D)
+    element = state.transformsToRoot[frame]
+    if element.dirty
+        toParent = transform_to_parent(state, frame)
+        toRoot = toParent.to == root_frame(state.mechanism) ? toParent : transform_to_root(state, toParent.to) * toParent
+        update!(element, toRoot)
+    end
+    get(element)
+end
+
+function relative_transform(state::MechanismState, from::CartesianFrame3D, to::CartesianFrame3D)
+    rootFrame = root_frame(state.mechanism)
+    if to == rootFrame
+        ret = transform_to_root(state, from)
+    elseif from == rootFrame
+        ret = inv(transform_to_root(state, to))
+    else
+        ret = inv(transform_to_root(state, to)) * transform_to_root(state, from)
+    end
+    ret
+end
+
+function transform(state::MechanismState, point::Point3D, to::CartesianFrame3D)
+    point.frame == to && return point # nothing to be done
+    relative_transform(state, point.frame, to) * point
+end
+
+function transform(state::MechanismState, vector::FreeVector3D, to::CartesianFrame3D)
+    vector.frame == to && return vector # nothing to be done
+    relative_transform(state, vector.frame, to) * vector
+end
+
+function transform(state::MechanismState, twist::Twist, to::CartesianFrame3D)
+    twist.frame == to && return twist # nothing to be done
+    transform(twist, relative_transform(state, twist.frame, to))
+end
+
+function transform(state::MechanismState, wrench::Wrench, to::CartesianFrame3D)
+    wrench.frame == to && return wrench # nothing to be done
+    transform(wrench, relative_transform(state, wrench.frame, to))
+end
+
+function transform(state::MechanismState, accel::SpatialAcceleration, to::CartesianFrame3D)
+    accel.frame == to && return accel # nothing to be done
+    oldToRoot = transform_to_root(state, accel.frame)
+    rootToOld = inv(oldToRoot)
+    twistOfBodyWrtBase = transform(relative_twist(state, accel.body, accel.base), rootToOld)
+    twistOfOldWrtNew = transform(relative_twist(state, accel.frame, to), rootToOld)
+    oldToNew = inv(transform_to_root(state, to)) * oldToRoot
+    transform(accel, oldToNew, twistOfOldWrtNew, twistOfBodyWrtBase)
+end
+
+function update_twists_and_bias_accelerations!(state::MechanismState)
+    C = eltype(state)
+    for vertex in state.mechanism.toposortedTree
         body = vertex.vertexData
-        children = [state.crbInertias[v.vertexData] for v in vertex.children]
-        state.crbInertias[body] = CacheElement(SpatialInertia{C}, UpdateCompositeRigidBodyInertia(state.spatialInertias[body], children))
-    end
+        if !isroot(vertex)
+            joint = vertex.edgeToParentData
+            parentBody = vertex.parent.vertexData
+            parentTwist = twist_wrt_world(state, parentBody)
+            jointTwist = joint_twist(joint, configuration(state, joint), velocity(state, joint))
+            parentFrame = default_frame(state.mechanism, parentBody)
+            jointTwist = Twist(joint.frameAfter, parentFrame, jointTwist.frame, jointTwist.angular, jointTwist.linear) # to make the frames line up;
+            bodyToRoot = transform_to_root(state, joint.frameAfter)
+            twist = parentTwist + transform(jointTwist, bodyToRoot)
+            update!(state.twists[body], twist)
 
-    setdirty!(state)
-    return state
+            parentBias = bias_acceleration(state, parentBody)
+            jointBias = bias_acceleration(joint, configuration(state, joint), velocity(state, joint))
+            jointBias = SpatialAcceleration(joint.frameAfter, parentFrame, jointBias.frame, jointBias.angular, jointBias.linear) # to make the frames line up
+            twistOfBodyWrtRoot = transform(twist, inv(bodyToRoot))
+            bias = parentBias + transform(jointBias, bodyToRoot, twistOfBodyWrtRoot, jointTwist) # TODO: jointTwist
+            update!(state.biasAccelerations[body], bias)
+        else
+            rootFrame = root_frame(state.mechanism)
+            update!(state.twists[body], zero(Twist{C}, rootFrame, rootFrame, rootFrame))
+            update!(state.biasAccelerations[body], zero(SpatialAcceleration{C}, rootFrame, rootFrame, rootFrame))
+        end
+    end
+end
+
+function twist_wrt_world{X, M}(state::MechanismState{X, M}, body::RigidBody{M})
+    element = state.twists[body]
+    if element.dirty
+        update_twists_and_bias_accelerations!(state)
+    end
+    get(element)
+end
+
+relative_twist{X, M}(state::MechanismState{X, M}, body::RigidBody{M}, base::RigidBody{M}) = -twist_wrt_world(state, base) + twist_wrt_world(state, body)
+
+function relative_twist(state::MechanismState, bodyFrame::CartesianFrame3D, baseFrame::CartesianFrame3D)
+    twist = relative_twist(state, state.mechanism.bodyFixedFrameToBody[bodyFrame],  state.mechanism.bodyFixedFrameToBody[baseFrame])
+    Twist(bodyFrame, baseFrame, twist.frame, twist.angular, twist.linear)
+end
+
+function bias_acceleration{X, M}(state::MechanismState{X, M}, body::RigidBody{M})
+    element = state.biasAccelerations[body]
+    if element.dirty
+        update_twists_and_bias_accelerations!(state)
+    end
+    get(element)
+end
+
+function update_motion_subspaces!(state::MechanismState)
+    for vertex in non_root_vertices(state.mechanism)
+        body = vertex.vertexData
+        joint = vertex.edgeToParentData
+        parentBody = vertex.parent.vertexData
+        motionSubspace = motion_subspace(joint, configuration(state, joint))
+        motionSubspace = transform(motionSubspace, transform_to_root(state, motionSubspace.frame))
+        parentFrame = default_frame(state.mechanism, parentBody)
+        motionSubspace = GeometricJacobian(motionSubspace.body, parentFrame, motionSubspace.frame, motionSubspace.angular, motionSubspace.linear) # to make frames line up
+        update!(state.motionSubspaces[joint], motionSubspace)
+    end
+end
+
+function motion_subspace(state::MechanismState, joint::Joint)
+    element = state.motionSubspaces[joint]
+    if element.dirty
+        update_motion_subspaces!(state)
+    end
+    get(element)
+end
+
+function update_inertias!(state::MechanismState)
+    vertices = non_root_vertices(state.mechanism)
+    for i = length(vertices) : -1 : 1
+        vertex = vertices[i]
+        body = vertex.vertexData
+        spatialInertia = transform(body.inertia, transform_to_root(state, body.inertia.frame))
+        update!(state.spatialInertias[body], spatialInertia)
+
+        crbInertia = spatialInertia
+        for child in vertex.children
+            crbInertia += crb_inertia(state, child.vertexData)
+        end
+        update!(state.crbInertias[body], crbInertia)
+    end
+end
+
+function spatial_inertia{X, M}(state::MechanismState{X, M}, body::RigidBody{M})
+    element = state.spatialInertias[body]
+    if element.dirty
+        update_inertias!(state)
+    end
+    get(element)
+end
+
+function crb_inertia{X, M}(state::MechanismState{X, M}, body::RigidBody{M})
+    element = state.crbInertias[body]
+    if element.dirty
+        update_inertias!(state)
+    end
+    get(element)
 end

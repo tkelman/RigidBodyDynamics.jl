@@ -2,6 +2,7 @@ type Mechanism{T<:Real}
     toposortedTree::Vector{TreeVertex{RigidBody{T}, Joint{T}}}
     bodyFixedFrameDefinitions::Dict{RigidBody{T}, Set{Transform3D{T}}}
     bodyFixedFrameToBody::Dict{CartesianFrame3D, RigidBody{T}}
+    # TODO: consider adding frameAfterJointToJoint here
     jointToJointTransforms::Dict{Joint{T}, Transform3D{T}}
     gravitationalAcceleration::FreeVector3D{T}
     qRanges::Dict{Joint{T}, UnitRange{Int64}}
