@@ -46,8 +46,7 @@ rand(::Type{QuaternionFloating}) = QuaternionFloating()
 
 function joint_transform{T<:Real}(j::Joint, jt::QuaternionFloating, q::AbstractVector{T})
     @boundscheck length(q) == num_positions(j, jt) || error("q has wrong size")
-    @inbounds rot = Quaternion(q[1], q[2], q[3], q[4])
-    Quaternions.normalize(rot)
+    @inbounds rot = Quat(q[1], q[2], q[3], q[4])
     @inbounds trans = SVector{3}(q[5], q[6], q[7])
     return Transform3D{T}(j.frameAfter, j.frameBefore, rot, trans)
 end
@@ -65,35 +64,34 @@ bias_acceleration{T<:Real}(j::Joint, jt::QuaternionFloating, q::AbstractVector{T
 function configuration_derivative_to_velocity(j::Joint, jt::QuaternionFloating, q::AbstractVector, q̇::AbstractVector)
     @boundscheck length(q) == num_positions(j, jt) || error("q has wrong size")
     @boundscheck length(q̇) == num_positions(j, jt) || error("q̇ has wrong size")
-    @inbounds quat = Quaternion(q[1], q[2], q[3], q[4])
-    Quaternions.normalize(quat)
-    @inbounds quatdot = Quaternion(q̇[1], q̇[2], q̇[3], q̇[4])
+    @inbounds quat = Quat(q[1], q[2], q[3], q[4])
+    @inbounds quatdot = view(q̇, 1 : 4)
+    ω = angular_velocity_in_body(quat, quatdot)
     @inbounds posdot = SVector{3}(q̇[5], q̇[6], q̇[7])
-    linear = rotate(posdot, inv(quat))
-    angularQuat = 2 * inv(quat) * quatdot
-    @inbounds ret = [angularQuat.v1; angularQuat.v2; angularQuat.v3; linear[1]; linear[2]; linear[3]]
+    linear = inv(quat) * posdot
+    @inbounds ret = [ω; linear]
     ret
 end
 
 function velocity_to_configuration_derivative(j::Joint, jt::QuaternionFloating, q::AbstractVector, v::AbstractVector)
     @boundscheck length(q) == num_positions(j, jt) || error("q has wrong size")
     @boundscheck length(v) == num_velocities(j, jt) || error("v has wrong size")
-    @inbounds quat = Quaternion(q[1], q[2], q[3], q[4])
-    Quaternions.normalize(quat)
-    @inbounds ωQuat = Quaternion(0, v[1], v[2], v[3])
+    @inbounds quat = Quat(q[1], q[2], q[3], q[4])
+    @inbounds ω = SVector(v[1], v[2], v[3])
     @inbounds linear = SVector{3}(v[4], v[5], v[6])
-    quatdot = 1/2 * quat * ωQuat
-    posdot = rotate(linear, quat)
-    @inbounds ret = [quatdot.s; quatdot.v1; quatdot.v2; quatdot.v3; posdot[1]; posdot[2]; posdot[3]]
+    quatdot = quaternion_derivative(quat, ω)
+    posdot = quat * linear
+    @inbounds ret = [quatdot; posdot]
     ret
 end
 
 function zero_configuration{T<:Real}(j::Joint, jt::QuaternionFloating, ::Type{T})
-    return [one(T); zeros(T, 6)]
+    [one(T); zeros(T, 6)]
 end
+
 function rand_configuration{T<:Real}(j::Joint, jt::QuaternionFloating, ::Type{T})
-    quat = convert(Quaternion{T}, nquatrand())
-    return [quat.s; quat.v1; quat.v2; quat.v3; rand(T, 3)]
+    quat = rand(Quat{T})
+    [quat.w; quat.x; quat.y; quat.z; rand(T, 3)]
 end
 
 function joint_twist{T<:Real}(j::Joint, jt::QuaternionFloating, q::AbstractVector{T}, v::AbstractVector{T})
@@ -175,7 +173,7 @@ function joint_transform{T1, T2}(j::Joint, jt::Revolute{T2}, q::AbstractVector{T
     @inbounds arg = q[1] / T(2)
     s = sin(arg)
     axis = jt.rotation_axis
-    @inbounds rot = Quaternion(cos(arg), s * axis[1], s * axis[2], s * axis[3], true)
+    @inbounds rot = Quat(cos(arg), s * axis[1], s * axis[2], s * axis[3])
     Transform3D(j.frameAfter, j.frameBefore, rot)
 end
 

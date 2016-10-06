@@ -1,7 +1,7 @@
 using Base.Test
 
 using RigidBodyDynamics
-using Quaternions
+using Rotations
 using StaticArrays
 using FactCheck
 using Compat

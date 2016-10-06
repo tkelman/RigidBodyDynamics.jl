@@ -72,39 +72,41 @@ cross(p::Point3D, v::FreeVector3D) = begin framecheck(p.frame, v.frame); FreeVec
 immutable Transform3D{T<:Real}
     from::CartesianFrame3D
     to::CartesianFrame3D
-    rot::Quaternion{T}
+    rot::Quat{T}
     trans::SVector{3, T}
 
-    Transform3D(from::CartesianFrame3D, to::CartesianFrame3D, rot::Quaternion{T}, trans::SVector{3, T}) = new(from, to, rot, trans)
-    Transform3D(from::CartesianFrame3D, to::CartesianFrame3D) = new(from, to, one(Quaternion{T}), zeros(SVector{3, T}))
-    Transform3D(frame::CartesianFrame3D) = new(frame, frame, one(Quaternion{T}), zeros(SVector{3, T}))
+    Transform3D(from::CartesianFrame3D, to::CartesianFrame3D, rot::Quat{T}, trans::SVector{3, T}) = new(from, to, rot, trans)
+    Transform3D(from::CartesianFrame3D, to::CartesianFrame3D) = new(from, to, eye(Quat{T}), zeros(SVector{3, T}))
+    Transform3D(frame::CartesianFrame3D) = new(frame, frame, eye(Quat{T}), zeros(SVector{3, T}))
 end
-Transform3D{T}(from::CartesianFrame3D, to::CartesianFrame3D, rot::Quaternion{T}, trans::SVector{3, T}) = Transform3D{T}(from, to, rot, trans)
-Transform3D{T}(from::CartesianFrame3D, to::CartesianFrame3D, rot::Quaternion{T}) = Transform3D{T}(from, to, rot, zeros(SVector{3, T}))
-Transform3D{T}(from::CartesianFrame3D, to::CartesianFrame3D, trans::SVector{3, T}) = Transform3D{T}(from, to, one(Quaternion{T}), trans)
-Transform3D{T}(::Type{T}, from::CartesianFrame3D, to::CartesianFrame3D) = Transform3D{T}(from, to, one(Quaternion{T}), zeros(SVector{3, T}))
-Transform3D{T}(::Type{T}, frame::CartesianFrame3D) = Transform3D{T}(frame, frame, one(Quaternion{T}), zeros(SVector{3, T}))
+Transform3D{T}(from::CartesianFrame3D, to::CartesianFrame3D, rot::Quat{T}, trans::SVector{3, T}) = Transform3D{T}(from, to, rot, trans)
+Transform3D{T}(from::CartesianFrame3D, to::CartesianFrame3D, rot::Quat{T}) = Transform3D{T}(from, to, rot, zeros(SVector{3, T}))
+Transform3D{T}(from::CartesianFrame3D, to::CartesianFrame3D, trans::SVector{3, T}) = Transform3D{T}(from, to, eye(Quat{T}), trans)
+Transform3D{T}(::Type{T}, from::CartesianFrame3D, to::CartesianFrame3D) = Transform3D{T}(from, to, eye(Quat{T}), zeros(SVector{3, T}))
+Transform3D{T}(::Type{T}, frame::CartesianFrame3D) = Transform3D{T}(frame, frame, eye(Quat{T}), zeros(SVector{3, T}))
 
 convert{T}(::Type{Transform3D{T}}, t::Transform3D{T}) = t
-convert{T}(::Type{Transform3D{T}}, t::Transform3D) = Transform3D(t.from, t.to, convert(Quaternion{T}, t.rot), convert(SVector{3, T}, t.trans))
+convert{T}(::Type{Transform3D{T}}, t::Transform3D) = Transform3D(t.from, t.to, convert(Quat{T}, t.rot), convert(SVector{3, T}, t.trans))
 
 function show(io::IO, t::Transform3D)
     println(io, "Transform3D from \"$(name(t.from))\" to \"$(name(t.to))\":")
-    angle, axis = angle_axis_proper(t.rot)
+    angle_axis = AngleAxis(t.rot)
+    angle = rotation_angle(angle_axis)
+    axis = rotation_axis(angle_axis)
     println(io, "rotation: $(angle) rad about $(axis), translation: $(t.trans)") # TODO: use fixed Quaternions.jl version once it's updated
 end
 
 function *(t1::Transform3D, t2::Transform3D)
     framecheck(t1.from, t2.to)
-    return Transform3D(t2.from, t1.to, t1.rot * t2.rot, t1.trans + rotate(t2.trans, t1.rot))
+    Transform3D(t2.from, t1.to, t1.rot * t2.rot, t1.trans + t1.rot * t2.trans)
 end
 
 function inv{T}(t::Transform3D{T})
     rotinv = inv(t.rot)
-    return Transform3D{T}(t.to, t.from, rotinv, -rotate(t.trans, rotinv))
+    return Transform3D{T}(t.to, t.from, rotinv, -rotinv * t.trans)
 end
 
-rand(::Type{Transform3D{Float64}}, from::CartesianFrame3D, to::CartesianFrame3D) = Transform3D(from, to, nquatrand(), rand(SVector{3, Float64}))
+rand(::Type{Transform3D{Float64}}, from::CartesianFrame3D, to::CartesianFrame3D) = Transform3D(from, to, rand(Quat), rand(SVector{3, Float64}))
 
 function isapprox{T}(x::Transform3D{T}, y::Transform3D{T}; atol::Real = 1e-12)
     theta = 2 * angle(x.rot / y.rot)
@@ -113,10 +115,10 @@ end
 
 function *(t::Transform3D, point::Point3D)
     framecheck(t.from, point.frame)
-    return Point3D(t.to, rotate(point.v, t.rot) + t.trans)
+    return Point3D(t.to, t.rot * point.v + t.trans)
 end
 
 function *(t::Transform3D, vector::FreeVector3D)
     framecheck(t.from, vector.frame)
-    return FreeVector3D(t.to, rotate(vector.v, t.rot))
+    return FreeVector3D(t.to, t.rot * vector.v)
 end

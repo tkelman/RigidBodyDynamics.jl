@@ -84,7 +84,7 @@ function transform{I, T}(inertia::SpatialInertia{I}, t::Transform3D{T})
         m = convert(S, inertia.mass)
         c = convert(SVector{3, S}, inertia.crossPart)
 
-        R = rotationmatrix_normalized_fsa(convert(Quaternion{S}, t.rot))
+        R = RotMatrix(convert(Quat{S}, t.rot)).mat
         p = convert(SVector{3, S}, t.trans)
 
         cnew = R * c
@@ -101,7 +101,8 @@ end
 function rand{T}(::Type{SpatialInertia{T}}, frame::CartesianFrame3D)
     # Try to generate a random but physical moment of inertia
     # by constructing it from its eigendecomposition
-    Q = rotationmatrix(qrotation(rand(T, 3) * 2*pi))
+    
+    Q = RotMatrix(RodriguesVec(rand(), rand(), rand())).mat
     principalMoments = Vector{T}(3)
 
     # Scale the inertias to make the length scale of the
@@ -162,9 +163,9 @@ function (+)(twist1::Twist, twist2::Twist)
 end
 (-)(t::Twist) = Twist(t.base, t.body, t.frame, -t.angular, -t.linear)
 
-function transform_spatial_motion(angular::SVector{3}, linear::SVector{3}, rot::Quaternion, p::SVector{3})
-    angular = rotate(angular, rot)
-    linear = rotate(linear, rot) + cross(p, angular)
+function transform_spatial_motion(angular::SVector{3}, linear::SVector{3}, rot::Quat, p::SVector{3})
+    angular = rot * angular
+    linear = rot * linear + cross(p, angular)
     return angular, linear
 end
 
@@ -236,7 +237,7 @@ end
 
 function transform(jac::GeometricJacobian, transform::Transform3D)
     framecheck(jac.frame, transform.from)
-    R = rotationmatrix_normalized_fsa(transform.rot)
+    R = RotMatrix(transform.rot).mat
     T = eltype(R)
     angular = R * jac.angular
     linear = R * jac.linear + cross(transform.trans, angular)
@@ -277,8 +278,8 @@ rand{T}(::Type{Momentum{T}}, frame::CartesianFrame3D) = Momentum(frame, rand(SVe
 
 function transform{F<:ForceSpaceElement}(f::F, transform::Transform3D)
     framecheck(f.frame, transform.from)
-    linear = rotate(f.linear, transform.rot)
-    angular = rotate(f.angular, transform.rot) + cross(transform.trans, linear)
+    linear = transform.rot * f.linear
+    angular = transform.rot * f.angular + cross(transform.trans, linear)
     F(transform.to, angular, linear)
 end
 
@@ -372,7 +373,7 @@ end
 
 function transform(mat::MomentumMatrix, transform::Transform3D)
     framecheck(mat.frame, transform.from)
-    R = rotationmatrix_normalized_fsa(transform.rot)
+    R = RotMatrix(transform.rot).mat
     linear = R * linear_part(mat)
     T = eltype(linear)
     angular = R * angular_part(mat) + cross(transform.trans, linear)

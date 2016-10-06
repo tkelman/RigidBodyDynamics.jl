@@ -66,6 +66,7 @@ immutable MechanismState{X<:Real, M<:Real, C<:Real} # immutable, but can change 
 
     function MechanismState(m::Mechanism{M})
         q = zeros(X, num_positions(m))
+        for joint in joints(m) view(q, m.qRanges[joint])[:] = zero_configuration(joint, X) end
         v = zeros(X, num_velocities(m))
         transformCache = TransformCache(m, q)
         twistsAndBiases = Dict{RigidBody{M}, CacheElement{Tuple{Twist{C}, SpatialAcceleration{C}}, UpdateTwistAndBias{C}}}()
