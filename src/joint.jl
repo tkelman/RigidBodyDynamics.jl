@@ -6,7 +6,9 @@ type Joint{T<:Real}
     frameAfter::CartesianFrame3D
     jointType::JointType{T}
 
-    Joint(name::String, jointType::JointType{T}) = new(name, CartesianFrame3D(string("before_", name)), CartesianFrame3D(string("after_", name)), jointType)
+    function Joint(name::String, jointType::JointType{T})
+        new(name, CartesianFrame3D(string("before_", name)), CartesianFrame3D(string("after_", name)), jointType)
+    end
 end
 
 Joint{T<:Real}(name::String, jointType::JointType{T}) = Joint{T}(name, jointType)
@@ -86,7 +88,14 @@ function joint_torque!(joint::Joint, τ::AbstractVector, q::AbstractVector, join
     _joint_torque!(joint.jointType, τ, q, joint_wrench)
 end
 
+function flip_direction(joint::Joint)
+    Joint(joint.name + "Flipped", flip_direction(joint.jointType))
+end
+
 immutable QuaternionFloating{T} <: JointType{T}
+    direction_flipped::Bool
+    QuaternionFloating() = new(false)
+    QuaternionFloating(direction_flipped::Bool) = new(direction_flipped)
 end
 
 show(io::IO, jt::QuaternionFloating) = print(io, "Quaternion floating joint")
@@ -97,16 +106,27 @@ num_velocities(::QuaternionFloating) = 6
 
 function _joint_transform{T<:Real, X<:Real}(j::Joint{T}, jt::QuaternionFloating{T}, q::AbstractVector{X})
     S = promote_type(T, X)
-    @inbounds rot = Quaternion(q[1], q[2], q[3], q[4])
+    @inbounds rot = convert(Quaternion{S}, Quaternion(q[1], q[2], q[3], q[4]))
     Quaternions.normalize(rot)
-    @inbounds trans = SVector{3}(q[5], q[6], q[7])
-    Transform3D(j.frameAfter, j.frameBefore, convert(Quaternion{S}, rot), convert(SVector{3, S}, trans))
+    @inbounds trans = convert(SVector{3, S}, SVector{3}(q[5], q[6], q[7]))
+
+    if jt.direction_flipped
+        ret = Transform3D(j.frameBefore, j.frameAfter, rot, trans)
+        ret = inv(ret)
+    else
+        ret = Transform3D(j.frameAfter, j.frameBefore, rot, trans)
+    end
+    ret
 end
 
 function _motion_subspace{T<:Real, X<:Real}(j::Joint{T}, jt::QuaternionFloating{T}, q::AbstractVector{X})
     S = promote_type(T, X)
     angular = hcat(eye(SMatrix{3, 3, S}), zeros(SMatrix{3, 3, S}))
     linear = hcat(zeros(SMatrix{3, 3, S}), eye(SMatrix{3, 3, S}))
+    if jt.direction_flipped
+        angular = -angular
+        linear = -linear
+    end
     GeometricJacobian(j.frameAfter, j.frameBefore, j.frameAfter, angular, linear)
 end
 
@@ -165,15 +185,24 @@ end
 
 function _joint_twist{T<:Real, X<:Real}(j::Joint{T}, jt::QuaternionFloating{T}, q::AbstractVector{X}, v::AbstractVector{X})
     S = promote_type(T, X)
-    @inbounds ret = Twist(j.frameAfter, j.frameBefore, j.frameAfter, SVector{3, S}(v[1], v[2], v[3]), SVector{3, S}(v[4], v[5], v[6]))
-    ret
+    @inbounds angular = SVector{3, S}(v[1], v[2], v[3])
+    @inbounds linear = SVector{3, S}(v[4], v[5], v[6])
+    if jt.direction_flipped
+        angular = -angular
+        linear = -linear
+    end
+    Twist(j.frameAfter, j.frameBefore, j.frameAfter, angular, linear)
 end
 
 function _joint_torque!(jt::QuaternionFloating, τ::AbstractVector, q::AbstractVector, joint_wrench::Wrench)
-    @inbounds copy!(view(τ, 1 : 3), joint_wrench.angular)
-    @inbounds copy!(view(τ, 4 : 6), joint_wrench.linear)
+    angular = jt.direction_flipped ? -joint_wrench.angular : joint_wrench.angular
+    linear = jt.direction_flipped ? -joint_wrench.linear : joint_wrench.linear
+    @inbounds copy!(view(τ, 1 : 3), angular)
+    @inbounds copy!(view(τ, 4 : 6), linear)
     nothing
 end
+
+flip_direction{T}(jt::QuaternionFloating{T}) = QuaternionFloating{T}(!jt.direction_flipped)
 
 
 abstract OneDegreeOfFreedomFixedAxis{T<:Real} <: JointType{T}
@@ -238,6 +267,8 @@ function _joint_torque!(jt::Prismatic, τ::AbstractVector, q::AbstractVector, jo
     nothing
 end
 
+flip_direction(jt::Prismatic) = Prismatic(-jt.translation_axis)
+
 
 immutable Revolute{T<:Real} <: OneDegreeOfFreedomFixedAxis{T}
     rotation_axis::SVector{3, T}
@@ -275,6 +306,9 @@ function _joint_torque!(jt::Revolute, τ::AbstractVector, q::AbstractVector, joi
     nothing
 end
 
+flip_direction(jt::Revolute) = Revolute(-jt.rotation_axis)
+
+
 immutable Fixed{T<:Real} <: JointType{T}
 end
 show(io::IO, jt::Fixed) = print(io, "Fixed joint")
@@ -306,3 +340,5 @@ end
 _configuration_derivative_to_velocity!(::Fixed, v::AbstractVector, q::AbstractVector, q̇::AbstractVector) = nothing
 _velocity_to_configuration_derivative!(::Fixed, q̇::AbstractVector, q::AbstractVector, v::AbstractVector) = nothing
 _joint_torque!(jt::Fixed, τ::AbstractVector, q::AbstractVector, joint_wrench::Wrench) = nothing
+
+flip_direction{T}(::Fixed{T}) = Fixed{T}()
